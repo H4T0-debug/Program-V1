@@ -1,7 +1,6 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
-local TextService = game:GetService("TextService")
 
 local BACKEND_URL = "https://program-v1.onrender.com"
 local httpReq = (syn and syn.request) or http_request or request or (http and http.request)
@@ -175,7 +174,7 @@ addUICorner(outputContainer, 6)
 
 local listLayout = Instance.new("UIListLayout")
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 3)
+listLayout.Padding = UDim.new(0, 4)
 listLayout.Parent = outputContainer
 
 listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -183,16 +182,11 @@ listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	outputContainer.CanvasPosition = Vector2.new(0, listLayout.AbsoluteContentSize.Y)
 end)
 
--- Dynamic text wrapping printer function
+-- Printer function with AutomaticSize.Y line wrapping
 local function printOutput(text, color)
-	local labelWidth = outputContainer.AbsoluteSize.X - 15
-	if labelWidth <= 0 then labelWidth = 480 end
-
-	local textSize = TextService:GetTextSize(text, 12, Enum.Font.Code, Vector2.new(labelWidth, 1000))
-	local calculatedHeight = math.max(16, textSize.Y)
-
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -10, 0, calculatedHeight)
+	label.Size = UDim2.new(1, -12, 0, 0)
+	label.AutomaticSize = Enum.AutomaticSize.Y
 	label.BackgroundTransparency = 1
 	label.Text = text
 	label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
@@ -233,7 +227,6 @@ runButton.MouseButton1Click:Connect(function()
 			return
 		end
 
-		-- Direct parameters expected by backend
 		local payload = HttpService:JSONEncode({
 			language = language,
 			code = code,
@@ -273,14 +266,18 @@ runButton.MouseButton1Click:Connect(function()
 						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
 					end
 				elseif data.error then
-					printOutput("[SERVER ERROR] " .. tostring(data.error), Color3.fromRGB(255, 80, 80))
+					printOutput("[SERVER ERROR]:", Color3.fromRGB(255, 80, 80))
+					printOutput(tostring(data.error), Color3.fromRGB(255, 80, 80))
 				elseif data.message then
-					printOutput("[SERVER ERROR] " .. tostring(data.message), Color3.fromRGB(255, 80, 80))
+					printOutput("[SERVER ERROR]:", Color3.fromRGB(255, 80, 80))
+					printOutput(tostring(data.message), Color3.fromRGB(255, 80, 80))
 				else
-					printOutput("[RESPONSE] " .. body, Color3.fromRGB(255, 180, 60))
+					printOutput("[RESPONSE]:", Color3.fromRGB(255, 180, 60))
+					printOutput(body, Color3.fromRGB(255, 180, 60))
 				end
 			else
-				printOutput("[RAW BODY] " .. body, Color3.fromRGB(255, 80, 80))
+				printOutput("[RAW RESPONSE]:", Color3.fromRGB(255, 80, 80))
+				printOutput(body, Color3.fromRGB(255, 80, 80))
 			end
 		end
 	end)
