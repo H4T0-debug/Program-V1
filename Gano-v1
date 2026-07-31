@@ -1,0 +1,292 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+
+local BACKEND_URL = "https://program-v1.onrender.com"
+local httpReq = (syn and syn.request) or http_request or request or (http and http.request)
+
+-- Extension to Language map for Piston API
+local EXTENSION_MAP = {
+	["js"] = "javascript",
+	["py"] = "python",
+	["cpp"] = "c++",
+	["c"] = "c",
+	["java"] = "java",
+	["cs"] = "csharp",
+	["rb"] = "ruby",
+	["go"] = "go",
+	["rs"] = "rust",
+	["ts"] = "typescript",
+	["php"] = "php",
+	["lua"] = "lua"
+}
+
+-- Target Filename passed from loader
+local targetFilename = _G.GanoFilename or "script.js"
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Clean up existing UI if open
+if playerGui:FindFirstChild("GanoGui") then
+	playerGui.GanoGui:Destroy()
+end
+
+-- 1. Main ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GanoGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local function addUICorner(parent, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = parent
+	return corner
+end
+
+-- 2. Main Window
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 520, 0, 360)
+mainFrame.Position = UDim2.new(0.5, -260, 0.5, -180)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+addUICorner(mainFrame, 10)
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(45, 45, 55)
+stroke.Thickness = 1.5
+stroke.Parent = mainFrame
+
+-- 3. Header Bar
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 35)
+header.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+addUICorner(header, 10)
+
+local headerFix = Instance.new("Frame")
+headerFix.Size = UDim2.new(1, 0, 0, 10)
+headerFix.Position = UDim2.new(0, 0, 1, -10)
+headerFix.BackgroundColor3 = Color3.fromRGB(28, 28,-36)
+headerFix.BorderSizePixel = 0
+headerFix.Parent = header
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 120, 1, 0)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Gano-v1"
+titleLabel.TextColor3 = Color3.fromRGB(0, 230, 120)
+titleLabel.TextSize = 15
+titleLabel.Font = Enum.Font.Code
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = header
+
+local filenameLabel = Instance.new("TextLabel")
+filenameLabel.Size = UDim2.new(1, -160, 1, 0)
+filenameLabel.Position = UDim2.new(0, 100, 0, 0)
+filenameLabel.BackgroundTransparency = 1
+filenameLabel.Text = targetFilename
+filenameLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+filenameLabel.TextSize = 13
+filenameLabel.Font = Enum.Font.Code
+filenameLabel.TextXAlignment = Enum.TextXAlignment.Left
+filenameLabel.Parent = header
+
+-- Decorative Window Buttons
+for i, color in ipairs({Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63)}) do
+	local dot = Instance.new("Frame")
+	dot.Size = UDim2.new(0, 10, 0, 10)
+	dot.Position = UDim2.new(1, - (i * 18 + 5), 0.5, -5)
+	dot.BackgroundColor3 = color
+	dot.BorderSizePixel = 0
+	dot.Parent = header
+	addUICorner(dot, 5)
+end
+
+-- Header Drag Logic
+local dragging = false
+local dragStart, startPos
+
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+-- 4. Code Editor Input Box
+local codeBoxContainer = Instance.new("Frame")
+codeBoxContainer.Size = UDim2.new(1, -20, 0, 160)
+codeBoxContainer.Position = UDim2.new(0, 10, 0, 45)
+codeBoxContainer.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+codeBoxContainer.BorderSizePixel = 0
+codeBoxContainer.Parent = mainFrame
+addUICorner(codeBoxContainer, 6)
+
+local codeInput = Instance.new("TextBox")
+codeInput.Size = UDim2.new(1, -16, 1, -16)
+codeInput.Position = UDim2.new(0, 8, 0, 8)
+codeInput.BackgroundTransparency = 1
+codeInput.Text = ""
+codeInput.PlaceholderText = "// Write your code here..."
+codeInput.PlaceholderColor3 = Color3.fromRGB(80, 80, 95)
+codeInput.TextColor3 = Color3.fromRGB(230, 230, 240)
+codeInput.TextSize = 13
+codeInput.Font = Enum.Font.Code
+codeInput.TextXAlignment = Enum.TextXAlignment.Left
+codeInput.TextYAlignment = Enum.TextYAlignment.Top
+codeInput.MultiLine = true
+codeInput.ClearTextOnFocus = false
+codeInput.Parent = codeBoxContainer
+
+-- 5. Control Buttons (Run / Clear)
+local runButton = Instance.new("TextButton")
+runButton.Size = UDim2.new(0, 90, 0, 28)
+runButton.Position = UDim2.new(0, 10, 0, 212)
+runButton.BackgroundColor3 = Color3.fromRGB(0, 180, 95)
+runButton.Text = "Run"
+runButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+runButton.TextSize = 13
+runButton.Font = Enum.Font.Code
+runButton.Parent = mainFrame
+addUICorner(runButton, 5)
+
+local clearButton = Instance.new("TextButton")
+clearButton.Size = UDim2.new(0, 90, 0, 28)
+clearButton.Position = UDim2.new(0, 110, 0, 212)
+clearButton.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
+clearButton.Text = "Clear"
+clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+clearButton.TextSize = 13
+clearButton.Font = Enum.Font.Code
+clearButton.Parent = mainFrame
+addUICorner(clearButton, 5)
+
+-- 6. Output Console Area
+local outputContainer = Instance.new("ScrollingFrame")
+outputContainer.Size = UDim2.new(1, -20, 0, 100)
+outputContainer.Position = UDim2.new(0, 10, 0, 248)
+outputContainer.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+outputContainer.BorderSizePixel = 0
+outputContainer.ScrollBarThickness = 4
+outputContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 80)
+outputContainer.Parent = mainFrame
+addUICorner(outputContainer, 6)
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 3)
+listLayout.Parent = outputContainer
+
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	outputContainer.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+	outputContainer.CanvasPosition = Vector2.new(0, listLayout.AbsoluteContentSize.Y)
+end)
+
+local function printOutput(text, color)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -10, 0, 16)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
+	label.TextSize = 12
+	label.Font = Enum.Font.Code
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = outputContainer
+end
+
+printOutput("[READY] Gano-V1 loaded. Write code above and hit Run.", Color3.fromRGB(120, 120, 140))
+
+-- 7. Clear Button Action
+clearButton.MouseButton1Click:Connect(function()
+	codeInput.Text = ""
+	for _, child in ipairs(outputContainer:GetChildren()) do
+		if child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	printOutput("[CLEARED] Window reset.", Color3.fromRGB(120, 120, 140))
+end)
+
+-- 8. Run Button Execution Action
+runButton.MouseButton1Click:Connect(function()
+	local code = codeInput.Text
+	if code == "" then
+		printOutput("[WARN] Please write some code before running!", Color3.fromRGB(255, 180, 60))
+		return
+	end
+
+	-- Extract file extension (e.g. "server.js" -> "js")
+	local ext = targetFilename:match("%.([^%.]+)$") or ""
+	ext = string.lower(ext)
+	local language = EXTENSION_MAP[ext] or ext
+
+	if language == "" then
+		printOutput("[ERROR] Could not determine language extension.", Color3.fromRGB(255, 80, 80))
+		return
+	end
+
+	printOutput("[EXECUTING] Sending " .. language .. " code to backend...", Color3.fromRGB(255, 200, 80))
+
+	task.spawn(function()
+		if not httpReq then
+			printOutput("[ERROR] Executor missing request function!", Color3.fromRGB(255, 80, 80))
+			return
+		end
+
+		local payload = HttpService:JSONEncode({
+			language = language,
+			version = "*",
+			code = code
+		})
+
+		local success, response = pcall(function()
+			return httpReq({
+				Url = BACKEND_URL .. "/execute",
+				Method = "POST",
+				Headers = {
+					["Content-Type"] = "application/json"
+				},
+				Body = payload
+			})
+		end)
+
+		if success and response and response.Body then
+			local data = HttpService:JSONDecode(response.Body)
+			if data.success then
+				printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
+				local lines = string.split(data.output or "", "\n")
+				for _, line in ipairs(lines) do
+					if line ~= "" then
+						printOutput("  " .. line, Color3.fromRGB(230, 230, 230))
+					end
+				end
+			else
+				printOutput("[SERVER ERROR] " .. tostring(data.error), Color3.fromRGB(255, 80, 80))
+			end
+		else
+			printOutput("[ERROR] Failed to reach backend server.", Color3.fromRGB(255, 80, 80))
+		end
+	end)
+end)
