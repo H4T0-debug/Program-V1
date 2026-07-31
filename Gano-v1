@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
+local TextService = game:GetService("TextService")
 
 local BACKEND_URL = "https://program-v1.onrender.com"
 local httpReq = (syn and syn.request) or http_request or request or (http and http.request)
@@ -182,15 +183,24 @@ listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	outputContainer.CanvasPosition = Vector2.new(0, listLayout.AbsoluteContentSize.Y)
 end)
 
+-- Dynamic text wrapping printer function
 local function printOutput(text, color)
+	local labelWidth = outputContainer.AbsoluteSize.X - 15
+	if labelWidth <= 0 then labelWidth = 480 end
+
+	local textSize = TextService:GetTextSize(text, 12, Enum.Font.Code, Vector2.new(labelWidth, 1000))
+	local calculatedHeight = math.max(16, textSize.Y)
+
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -10, 0, 16)
+	label.Size = UDim2.new(1, -10, 0, calculatedHeight)
 	label.BackgroundTransparency = 1
 	label.Text = text
 	label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
 	label.TextSize = 12
 	label.Font = Enum.Font.Code
 	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Top
+	label.TextWrapped = true
 	label.Parent = outputContainer
 end
 
@@ -223,15 +233,11 @@ runButton.MouseButton1Click:Connect(function()
 			return
 		end
 
+		-- Direct parameters expected by backend
 		local payload = HttpService:JSONEncode({
 			language = language,
-			version = "*",
-			files = {
-				{
-					name = targetFilename,
-					content = code
-				}
-			}
+			code = code,
+			filename = targetFilename
 		})
 
 		local response
@@ -250,29 +256,31 @@ runButton.MouseButton1Click:Connect(function()
 		end
 
 		if response then
-			printOutput("[HTTP " .. tostring(response.StatusCode) .. "]: " .. tostring(response.StatusMessage or "OK"), Color3.fromRGB(180, 180, 200))
-			
 			local body = response.Body or ""
 			local decodeSuccess, data = pcall(function()
 				return HttpService:JSONDecode(body)
 			end)
 
 			if decodeSuccess and type(data) == "table" then
-				if data.run and data.run.output then
-					printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
-					for _, line in ipairs(string.split(data.run.output, "\n")) do
-						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
-					end
-				elseif data.output then
+				if data.output then
 					printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
 					for _, line in ipairs(string.split(data.output, "\n")) do
 						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
 					end
+				elseif data.run and data.run.output then
+					printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
+					for _, line in ipairs(string.split(data.run.output, "\n")) do
+						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
+					end
+				elseif data.error then
+					printOutput("[SERVER ERROR] " .. tostring(data.error), Color3.fromRGB(255, 80, 80))
+				elseif data.message then
+					printOutput("[SERVER ERROR] " .. tostring(data.message), Color3.fromRGB(255, 80, 80))
 				else
-					printOutput("[RAW JSON RESPONSE] " .. body, Color3.fromRGB(255, 180, 60))
+					printOutput("[RESPONSE] " .. body, Color3.fromRGB(255, 180, 60))
 				end
 			else
-				printOutput("[RAW BODY ERROR] " .. string.sub(body, 1, 150), Color3.fromRGB(255, 80, 80))
+				printOutput("[RAW BODY] " .. body, Color3.fromRGB(255, 80, 80))
 			end
 		end
 	end)
