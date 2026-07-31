@@ -182,7 +182,7 @@ listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	outputContainer.CanvasPosition = Vector2.new(0, listLayout.AbsoluteContentSize.Y)
 end)
 
--- Printer function with AutomaticSize.Y line wrapping
+-- Dynamic label function with forced wrapping
 local function printOutput(text, color)
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, -12, 0, 0)
@@ -244,7 +244,8 @@ runButton.MouseButton1Click:Connect(function()
 		end)
 
 		if not success then
-			printOutput("[HTTP FATAL ERROR] " .. tostring(err), Color3.fromRGB(255, 80, 80))
+			printOutput("[HTTP FATAL ERROR]:", Color3.fromRGB(255, 80, 80))
+			printOutput(tostring(err), Color3.fromRGB(255, 80, 80))
 			return
 		end
 
@@ -272,7 +273,7 @@ runButton.MouseButton1Click:Connect(function()
 					printOutput("[SERVER ERROR]:", Color3.fromRGB(255, 80, 80))
 					printOutput(tostring(data.message), Color3.fromRGB(255, 80, 80))
 				else
-					printOutput("[RESPONSE]:", Color3.fromRGB(255, 180, 60))
+					printOutput("[RAW RESPONSE]:", Color3.fromRGB(255, 180, 60))
 					printOutput(body, Color3.fromRGB(255, 180, 60))
 				end
 			else
