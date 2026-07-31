@@ -5,7 +5,6 @@ local HttpService = game:GetService("HttpService")
 local BACKEND_URL = "https://program-v1.onrender.com"
 local httpReq = (syn and syn.request) or http_request or request or (http and http.request)
 
--- Extension to Language map for Piston API
 local EXTENSION_MAP = {
 	["js"] = "javascript",
 	["py"] = "python",
@@ -21,18 +20,15 @@ local EXTENSION_MAP = {
 	["lua"] = "lua"
 }
 
--- Target Filename passed from loader
-local targetFilename = _G.GanoFilename or "script.js"
+local targetFilename = _G.GanoFilename or "server.js"
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Clean up existing UI if open
 if playerGui:FindFirstChild("GanoGui") then
 	playerGui.GanoGui:Destroy()
 end
 
--- 1. Main ScreenGui
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GanoGui"
 screenGui.ResetOnSpawn = false
@@ -45,7 +41,6 @@ local function addUICorner(parent, radius)
 	return corner
 end
 
--- 2. Main Window
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 520, 0, 360)
@@ -61,24 +56,15 @@ stroke.Color = Color3.fromRGB(45, 45, 55)
 stroke.Thickness = 1.5
 stroke.Parent = mainFrame
 
--- 3. Header Bar
 local header = Instance.new("Frame")
-header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 35)
 header.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
 header.BorderSizePixel = 0
 header.Parent = mainFrame
 addUICorner(header, 10)
 
-local headerFix = Instance.new("Frame")
-headerFix.Size = UDim2.new(1, 0, 0, 10)
-headerFix.Position = UDim2.new(0, 0, 1, -10)
-headerFix.BackgroundColor3 = Color3.fromRGB(28, 28,-36)
-headerFix.BorderSizePixel = 0
-headerFix.Parent = header
-
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(0, 120, 1, 0)
+titleLabel.Size = UDim2.new(0, 80, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "Gano-v1"
@@ -89,8 +75,8 @@ titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = header
 
 local filenameLabel = Instance.new("TextLabel")
-filenameLabel.Size = UDim2.new(1, -160, 1, 0)
-filenameLabel.Position = UDim2.new(0, 100, 0, 0)
+filenameLabel.Size = UDim2.new(1, -150, 1, 0)
+filenameLabel.Position = UDim2.new(0, 95, 0, 0)
 filenameLabel.BackgroundTransparency = 1
 filenameLabel.Text = targetFilename
 filenameLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
@@ -99,7 +85,6 @@ filenameLabel.Font = Enum.Font.Code
 filenameLabel.TextXAlignment = Enum.TextXAlignment.Left
 filenameLabel.Parent = header
 
--- Decorative Window Buttons
 for i, color in ipairs({Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63)}) do
 	local dot = Instance.new("Frame")
 	dot.Size = UDim2.new(0, 10, 0, 10)
@@ -110,10 +95,7 @@ for i, color in ipairs({Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46
 	addUICorner(dot, 5)
 end
 
--- Header Drag Logic
-local dragging = false
-local dragStart, startPos
-
+local dragging, dragStart, startPos
 header.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
@@ -135,7 +117,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- 4. Code Editor Input Box
 local codeBoxContainer = Instance.new("Frame")
 codeBoxContainer.Size = UDim2.new(1, -20, 0, 160)
 codeBoxContainer.Position = UDim2.new(0, 10, 0, 45)
@@ -160,7 +141,6 @@ codeInput.MultiLine = true
 codeInput.ClearTextOnFocus = false
 codeInput.Parent = codeBoxContainer
 
--- 5. Control Buttons (Run / Clear)
 local runButton = Instance.new("TextButton")
 runButton.Size = UDim2.new(0, 90, 0, 28)
 runButton.Position = UDim2.new(0, 10, 0, 212)
@@ -183,14 +163,12 @@ clearButton.Font = Enum.Font.Code
 clearButton.Parent = mainFrame
 addUICorner(clearButton, 5)
 
--- 6. Output Console Area
 local outputContainer = Instance.new("ScrollingFrame")
 outputContainer.Size = UDim2.new(1, -20, 0, 100)
 outputContainer.Position = UDim2.new(0, 10, 0, 248)
 outputContainer.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
 outputContainer.BorderSizePixel = 0
 outputContainer.ScrollBarThickness = 4
-outputContainer.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 80)
 outputContainer.Parent = mainFrame
 addUICorner(outputContainer, 6)
 
@@ -218,75 +196,75 @@ end
 
 printOutput("[READY] Gano-V1 loaded. Write code above and hit Run.", Color3.fromRGB(120, 120, 140))
 
--- 7. Clear Button Action
 clearButton.MouseButton1Click:Connect(function()
 	codeInput.Text = ""
 	for _, child in ipairs(outputContainer:GetChildren()) do
-		if child:IsA("TextLabel") then
-			child:Destroy()
-		end
+		if child:IsA("TextLabel") then child:Destroy() end
 	end
-	printOutput("[CLEARED] Window reset.", Color3.fromRGB(120, 120, 140))
+	printOutput("[CLEARED] Input and logs reset.", Color3.fromRGB(120, 120, 140))
 end)
 
--- 8. Run Button Execution Action
 runButton.MouseButton1Click:Connect(function()
 	local code = codeInput.Text
 	if code == "" then
-		printOutput("[WARN] Please write some code before running!", Color3.fromRGB(255, 180, 60))
+		printOutput("[WARN] Code box is empty!", Color3.fromRGB(255, 180, 60))
 		return
 	end
 
-	-- Extract file extension (e.g. "server.js" -> "js")
 	local ext = targetFilename:match("%.([^%.]+)$") or ""
 	ext = string.lower(ext)
 	local language = EXTENSION_MAP[ext] or ext
-
-	if language == "" then
-		printOutput("[ERROR] Could not determine language extension.", Color3.fromRGB(255, 80, 80))
-		return
-	end
 
 	printOutput("[EXECUTING] Sending " .. language .. " code to backend...", Color3.fromRGB(255, 200, 80))
 
 	task.spawn(function()
 		if not httpReq then
-			printOutput("[ERROR] Executor missing request function!", Color3.fromRGB(255, 80, 80))
+			printOutput("[ERROR] Executor request function missing!", Color3.fromRGB(255, 80, 80))
 			return
 		end
 
+		-- Standard execution structure
 		local payload = HttpService:JSONEncode({
 			language = language,
 			version = "*",
-			code = code
+			files = {
+				{
+					name = targetFilename,
+					content = code
+				}
+			}
 		})
 
 		local success, response = pcall(function()
 			return httpReq({
 				Url = BACKEND_URL .. "/execute",
 				Method = "POST",
-				Headers = {
-					["Content-Type"] = "application/json"
-				},
+				Headers = { ["Content-Type"] = "application/json" },
 				Body = payload
 			})
 		end)
 
 		if success and response and response.Body then
 			local data = HttpService:JSONDecode(response.Body)
-			if data.success then
+			
+			-- Handle output returned from server
+			if data.run and data.run.output then
 				printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
-				local lines = string.split(data.output or "", "\n")
-				for _, line in ipairs(lines) do
-					if line ~= "" then
-						printOutput("  " .. line, Color3.fromRGB(230, 230, 230))
-					end
+				for _, line in ipairs(string.split(data.run.output, "\n")) do
+					if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
 				end
+			elseif data.output then
+				printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
+				for _, line in ipairs(string.split(data.output, "\n")) do
+					if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
+				end
+			elseif data.message then
+				printOutput("[SERVER ERROR] " .. tostring(data.message), Color3.fromRGB(255, 80, 80))
 			else
-				printOutput("[SERVER ERROR] " .. tostring(data.error), Color3.fromRGB(255, 80, 80))
+				printOutput("[SERVER ERROR] Execution request failed.", Color3.fromRGB(255, 80, 80))
 			end
 		else
-			printOutput("[ERROR] Failed to reach backend server.", Color3.fromRGB(255, 80, 80))
+			printOutput("[ERROR] Request to Render failed.", Color3.fromRGB(255, 80, 80))
 		end
 	end)
 end)
