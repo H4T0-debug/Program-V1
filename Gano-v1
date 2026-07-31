@@ -223,7 +223,6 @@ runButton.MouseButton1Click:Connect(function()
 			return
 		end
 
-		-- Standard execution structure
 		local payload = HttpService:JSONEncode({
 			language = language,
 			version = "*",
@@ -235,8 +234,9 @@ runButton.MouseButton1Click:Connect(function()
 			}
 		})
 
-		local success, response = pcall(function()
-			return httpReq({
+		local response
+		local success, err = pcall(function()
+			response = httpReq({
 				Url = BACKEND_URL .. "/execute",
 				Method = "POST",
 				Headers = { ["Content-Type"] = "application/json" },
@@ -244,27 +244,36 @@ runButton.MouseButton1Click:Connect(function()
 			})
 		end)
 
-		if success and response and response.Body then
-			local data = HttpService:JSONDecode(response.Body)
+		if not success then
+			printOutput("[HTTP FATAL ERROR] " .. tostring(err), Color3.fromRGB(255, 80, 80))
+			return
+		end
+
+		if response then
+			printOutput("[HTTP " .. tostring(response.StatusCode) .. "]: " .. tostring(response.StatusMessage or "OK"), Color3.fromRGB(180, 180, 200))
 			
-			-- Handle output returned from server
-			if data.run and data.run.output then
-				printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
-				for _, line in ipairs(string.split(data.run.output, "\n")) do
-					if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
+			local body = response.Body or ""
+			local decodeSuccess, data = pcall(function()
+				return HttpService:JSONDecode(body)
+			end)
+
+			if decodeSuccess and type(data) == "table" then
+				if data.run and data.run.output then
+					printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
+					for _, line in ipairs(string.split(data.run.output, "\n")) do
+						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
+					end
+				elseif data.output then
+					printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
+					for _, line in ipairs(string.split(data.output, "\n")) do
+						if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
+					end
+				else
+					printOutput("[RAW JSON RESPONSE] " .. body, Color3.fromRGB(255, 180, 60))
 				end
-			elseif data.output then
-				printOutput("[OUTPUT]:", Color3.fromRGB(0, 230, 120))
-				for _, line in ipairs(string.split(data.output, "\n")) do
-					if line ~= "" then printOutput("  " .. line, Color3.fromRGB(230, 230, 230)) end
-				end
-			elseif data.message then
-				printOutput("[SERVER ERROR] " .. tostring(data.message), Color3.fromRGB(255, 80, 80))
 			else
-				printOutput("[SERVER ERROR] Execution request failed.", Color3.fromRGB(255, 80, 80))
+				printOutput("[RAW BODY ERROR] " .. string.sub(body, 1, 150), Color3.fromRGB(255, 80, 80))
 			end
-		else
-			printOutput("[ERROR] Request to Render failed.", Color3.fromRGB(255, 80, 80))
 		end
 	end)
 end)
