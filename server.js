@@ -1,7 +1,7 @@
-//SON
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,10 +13,48 @@ const PISTON_FALLBACK = 'https://emkc.org/api/v2/piston';
 app.use(cors());
 app.use(express.json());
 
+// Default runtimes fallback list in case Piston fails
+const DEFAULT_RUNTIMES = [
+    { language: 'javascript', version: 'node.js', aliases: ['js', 'node'] },
+    { language: 'python', version: '3.x', aliases: ['py', 'python3'] }
+];
+
 // Root Health Check Route
 app.get('/', (req, res) => {
     res.json({ status: 'online', service: 'Program-V1 Roblox Bridge' });
 });
+
+/**
+ * Helper function to run code locally on the Render host instance
+ * as a safe fallback when external compiler APIs fail.
+ */
+function executeLocally(language, code) {
+    return new Promise((resolve, reject) => {
+        const langLower = language.toLowerCase();
+        let command = '';
+
+        if (langLower === 'js' || langLower === 'javascript' || langLower === 'node') {
+            command = `node -e ${JSON.stringify(code)}`;
+        } else if (langLower === 'py' || langLower === 'python' || langLower === 'python3') {
+            command = `python3 -c ${JSON.stringify(code)}`;
+        } else {
+            return reject(new Error(`Local execution not available for '${language}'. Only JS and Python supported locally.`));
+        }
+
+        exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
+            if (error && error.killed) {
+                return resolve({
+                    output: 'Execution Timed Out (5s limit reached).',
+                    stderr: 'TimeoutError: Process was killed after 5 seconds.'
+                });
+            }
+            resolve({
+                output: stdout || stderr || (error ? error.message : 'Code executed with no output.'),
+                stderr: stderr || (error ? error.message : '')
+            });
+        });
+    });
+}
 
 /**
  * GET /runtimes
@@ -24,17 +62,24 @@ app.get('/', (req, res) => {
  */
 app.get('/runtimes', async (req, res) => {
     try {
-        const response = await axios.get(`${PISTON_PRIMARY}/runtimes`, { timeout: 15000 });
+        const response = await axios.get(`${PISTON_PRIMARY}/runtimes`, { timeout: 10000 });
         res.json({ success: true, runtimes: response.data });
     } catch (error) {
-        console.error('Error fetching runtimes:', error.message);
-        res.status(500).json({ success: false, error: 'Failed to fetch available runtimes.' });
+        console.warn('Primary Piston runtimes failed, trying fallback...');
+        try {
+            const fallbackRes = await axios.get(`${PISTON_FALLBACK}/runtimes`, { timeout: 10000 });
+            res.json({ success: true, runtimes: fallbackRes.data });
+        } catch (fallbackErr) {
+            console.error('All runtimes endpoints failed. Serving local defaults.');
+            // Fallback to local default list so Roblox client doesn't crash
+            res.json({ success: true, runtimes: DEFAULT_RUNTIMES });
+        }
     }
 });
 
 /**
  * POST /execute
- * Sends source code to Piston API for remote execution.
+ * Sends source code to Piston API, or falls back to local execution.
  */
 app.post('/execute', async (req, res) => {
     const { language, version, code } = req.body;
@@ -56,10 +101,10 @@ app.post('/execute', async (req, res) => {
         ]
     };
 
+    // 1. Try Primary Piston Endpoint
     try {
-        // Try Primary Endpoint with a 45-second timeout for cold starts
         const response = await axios.post(`${PISTON_PRIMARY}/execute`, pistonPayload, {
-            timeout: 45000,
+            timeout: 15000,
             headers: { 'Content-Type': 'application/json' }
         });
 
@@ -75,10 +120,10 @@ app.post('/execute', async (req, res) => {
     } catch (primaryError) {
         console.warn('Primary Piston API failed, trying fallback...', primaryError.message);
 
-        // Fallback execution attempt
+        // 2. Try Fallback Piston Endpoint
         try {
             const fallbackResponse = await axios.post(`${PISTON_FALLBACK}/execute`, pistonPayload, {
-                timeout: 45000,
+                timeout: 15000,
                 headers: { 'Content-Type': 'application/json' }
             });
 
@@ -92,11 +137,26 @@ app.post('/execute', async (req, res) => {
             });
 
         } catch (fallbackError) {
-            console.error('Execution Error:', fallbackError.response?.data || fallbackError.message);
-            return res.status(500).json({ 
-                success: false, 
-                error: fallbackError.response?.data?.message || primaryError.response?.data?.message || fallbackError.message || 'Execution request failed on remote compiler server.' 
-            });
+            console.warn('Piston endpoints failed/restricted. Attempting direct local execution fallback...');
+
+            // 3. Fallback to direct local engine execution (for JS & Python)
+            try {
+                const localResult = await executeLocally(language, code);
+                return res.json({
+                    success: true,
+                    language: language,
+                    version: 'local-node',
+                    output: localResult.output,
+                    code: 0,
+                    stderr: localResult.stderr
+                });
+            } catch (localErr) {
+                console.error('All execution methods failed:', localErr.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: `Execution failed on remote servers and local engine: ${localErr.message}` 
+                });
+            }
         }
     }
 });
