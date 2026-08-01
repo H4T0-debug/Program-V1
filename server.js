@@ -13,22 +13,6 @@ const PISTON_FALLBACK = 'https://emkc.org/api/v2/piston';
 app.use(cors());
 app.use(express.json());
 
-// Mapping for Glot.io language identifiers
-const GLOT_LANG_MAP = {
-    'cpp': 'cpp',
-    'c++': 'cpp',
-    'c': 'c',
-    'python': 'python',
-    'py': 'python',
-    'python3': 'python',
-    'javascript': 'javascript',
-    'js': 'javascript',
-    'node': 'javascript',
-    'java': 'java',
-    'go': 'go',
-    'rust': 'rust'
-};
-
 // Default runtimes fallback list
 const DEFAULT_RUNTIMES = [
     { language: 'javascript', version: 'node.js', aliases: ['js', 'node'] },
@@ -37,53 +21,58 @@ const DEFAULT_RUNTIMES = [
     { language: 'c', version: 'gcc', aliases: ['gcc'] }
 ];
 
+// Helper to extract exact error message details from Axios / HTTP responses
+function extractRawError(err) {
+    if (err.response) {
+        // Server responded with a status code outside 2xx range
+        const status = err.response.status;
+        const statusText = err.response.statusText;
+        const data = typeof err.response.data === 'object' ? JSON.stringify(err.response.data) : err.response.data;
+        return `[HTTP ${status} ${statusText}]: ${data}`;
+    } else if (err.request) {
+        // Request was made but no response was received
+        return `[No Response Received]: Timeout or Network Connection Refused`;
+    } else {
+        // Something happened in setting up the request
+        return `[Internal Script Error]: ${err.message}`;
+    }
+}
+
 // Root Health Check Route
 app.get('/', (req, res) => {
     res.json({ status: 'online', service: 'Program-V1 Roblox Bridge' });
 });
 
 /**
- * Helper function to execute code via Glot.io API
+ * Helper function to execute code via Wandbox API (No API key needed, handles C++, Python, JS, C)
  */
-async function executeGlot(language, code) {
+async function executeWandbox(language, code) {
     const langLower = language.toLowerCase();
-    const glotLang = GLOT_LANG_MAP[langLower];
+    let compiler = '';
 
-    if (!glotLang) {
-        throw new Error(`Glot.io does not support language: ${language}`);
+    if (langLower === 'cpp' || langLower === 'c++') compiler = 'gcc-head';
+    else if (langLower === 'c') compiler = 'gcc-head-c';
+    else if (langLower === 'python' || langLower === 'py' || langLower === 'python3') compiler = 'cpython-head';
+    else if (langLower === 'javascript' || langLower === 'js' || langLower === 'node') compiler = 'nodejs-head';
+    else {
+        throw new Error(`Wandbox compiler mapping not configured for language: '${language}'`);
     }
 
-    let fileName = 'main.txt';
-    if (glotLang === 'cpp') fileName = 'main.cpp';
-    else if (glotLang === 'c') fileName = 'main.c';
-    else if (glotLang === 'python') fileName = 'main.py';
-    else if (glotLang === 'javascript') fileName = 'main.js';
-    else if (glotLang === 'java') fileName = 'Main.java';
-    else if (glotLang === 'go') fileName = 'main.go';
+    const response = await axios.post('https://wandbox.org/api/compile.json', {
+        compiler: compiler,
+        code: code
+    }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 20000
+    });
 
-    const response = await axios.post(
-        `https://glot.io/api/run/${glotLang}/latest`,
-        {
-            files: [
-                {
-                    name: fileName,
-                    content: code
-                }
-            ]
-        },
-        {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 15000
-        }
-    );
-
-    const stdout = response.data.stdout || '';
-    const stderr = response.data.stderr || response.data.error || '';
+    const stdout = response.data.program_message || '';
+    const stderr = response.data.compiler_error || response.data.program_error || response.data.compiler_message || '';
 
     return {
         output: stdout || stderr || 'Code executed with no output.',
         stderr: stderr,
-        code: stderr ? 1 : 0
+        code: response.data.status || 0
     };
 }
 
@@ -100,7 +89,7 @@ function executeLocally(language, code) {
         } else if (langLower === 'py' || langLower === 'python' || langLower === 'python3') {
             command = `python3 -c ${JSON.stringify(code)}`;
         } else {
-            return reject(new Error(`Local host execution only supports JS and Python. '${language}' requires remote compiler.`));
+            return reject(new Error(`Host environment only has node/python3 installed. '${language}' compiler (g++) missing on host.`));
         }
 
         exec(command, { timeout: 5000 }, (error, stdout, stderr) => {
@@ -156,6 +145,8 @@ app.post('/execute', async (req, res) => {
         files: [{ content: code }]
     };
 
+    const debugErrors = {};
+
     // 1. Try Primary Piston
     try {
         const response = await axios.post(`${PISTON_PRIMARY}/execute`, pistonPayload, {
@@ -165,6 +156,7 @@ app.post('/execute', async (req, res) => {
 
         return res.json({
             success: true,
+            provider: 'Piston-Primary',
             language: response.data.language,
             version: response.data.version,
             output: response.data.run?.output || 'Code executed with no output.',
@@ -173,7 +165,9 @@ app.post('/execute', async (req, res) => {
         });
 
     } catch (primaryError) {
-        console.warn('Primary Piston API failed, trying Fallback Piston...');
+        const primaryErrMsg = extractRawError(primaryError);
+        debugErrors['1_PistonPrimary'] = primaryErrMsg;
+        console.warn('[1/4] Primary Piston API failed:', primaryErrMsg);
 
         // 2. Try Fallback Piston
         try {
@@ -184,6 +178,7 @@ app.post('/execute', async (req, res) => {
 
             return res.json({
                 success: true,
+                provider: 'Piston-Fallback',
                 language: fallbackResponse.data.language,
                 version: fallbackResponse.data.version,
                 output: fallbackResponse.data.run?.output || 'Code executed with no output.',
@@ -192,39 +187,52 @@ app.post('/execute', async (req, res) => {
             });
 
         } catch (fallbackError) {
-            console.warn('Piston APIs unavailable. Trying Glot.io API...');
+            const fallbackErrMsg = extractRawError(fallbackError);
+            debugErrors['2_PistonFallback'] = fallbackErrMsg;
+            console.warn('[2/4] Fallback Piston API failed:', fallbackErrMsg);
 
-            // 3. Try Glot.io API (Fixes C++, C, Java, etc.)
+            // 3. Try Wandbox API (Works great for C++, C, JS, Py without auth)
             try {
-                const glotResult = await executeGlot(language, code);
+                const wandboxResult = await executeWandbox(language, code);
                 return res.json({
                     success: true,
+                    provider: 'Wandbox-API',
                     language: language,
-                    version: 'glot-latest',
-                    output: glotResult.output,
-                    code: glotResult.code,
-                    stderr: glotResult.stderr
+                    version: 'wandbox-gcc',
+                    output: wandboxResult.output,
+                    code: wandboxResult.code,
+                    stderr: wandboxResult.stderr
                 });
 
-            } catch (glotError) {
-                console.warn('Glot.io failed. Attempting direct local host execution...');
+            } catch (wandboxError) {
+                const wandboxErrMsg = extractRawError(wandboxError);
+                debugErrors['3_Wandbox'] = wandboxErrMsg;
+                console.warn('[3/4] Wandbox API failed:', wandboxErrMsg);
 
-                // 4. Try Local Host Execution (JS / Python only)
+                // 4. Try Direct Local Execution on Render Host (JS / Python only)
                 try {
                     const localResult = await executeLocally(language, code);
                     return res.json({
                         success: true,
+                        provider: 'Local-NodeHost',
                         language: language,
-                        version: 'local-node',
+                        version: 'local-host',
                         output: localResult.output,
                         code: 0,
                         stderr: localResult.stderr
                     });
                 } catch (localErr) {
-                    console.error('All compiler methods failed.');
+                    debugErrors['4_LocalHost'] = localErr.message;
+                    console.error('[4/4] Direct local execution failed:', localErr.message);
+
+                    // Return exact detailed breakdown of every failing backend layer
                     return res.status(500).json({ 
                         success: false, 
-                        error: `Execution failed: ${localErr.message}` 
+                        error: `ALL COMPILERS FAILED.\n` +
+                               `• Piston Primary: ${debugErrors['1_PistonPrimary']}\n` +
+                               `• Piston Fallback: ${debugErrors['2_PistonFallback']}\n` +
+                               `• Wandbox API: ${debugErrors['3_Wandbox']}\n` +
+                               `• Local Host: ${debugErrors['4_LocalHost']}`
                     });
                 }
             }
