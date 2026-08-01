@@ -117,7 +117,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Code Editor Container
 local codeBoxContainer = Instance.new("ScrollingFrame")
 codeBoxContainer.Size = UDim2.new(1, -20, 0, 160)
 codeBoxContainer.Position = UDim2.new(0, 10, 0, 45)
@@ -145,10 +144,9 @@ codeInput.TextWrapped = true
 codeInput.ClearTextOnFocus = false
 codeInput.Parent = codeBoxContainer
 
--- Mobile Dynamic Resizing Handler
 local function updateCodeBoxBounds()
 	local textHeight = codeInput.TextBounds.Y
-	local newHeight = math.max(145, textHeight + 20)
+	local newHeight = math.max(145, textHeight + 25)
 	codeInput.Size = UDim2.new(1, -12, 0, newHeight)
 	codeBoxContainer.CanvasSize = UDim2.new(0, 0, 0, newHeight + 10)
 end
@@ -156,8 +154,21 @@ end
 codeInput:GetPropertyChangedSignal("TextBounds"):Connect(updateCodeBoxBounds)
 codeInput:GetPropertyChangedSignal("Text"):Connect(updateCodeBoxBounds)
 
+-- FORCE MOBILE ENTER INTERCEPTION
+local isInsertingLine = false
+codeInput.FocusLost:Connect(function(enterPressed)
+	if enterPressed and not isInsertingLine then
+		isInsertingLine = true
+		codeInput.Text = codeInput.Text .. "\n"
+		task.defer(function()
+			codeInput:CaptureFocus()
+			isInsertingLine = false
+		end)
+	end
+end)
+
 local runButton = Instance.new("TextButton")
-runButton.Size = UDim2.new(0, 90, 0, 28)
+runButton.Size = UDim2.new(0, 80, 0, 28)
 runButton.Position = UDim2.new(0, 10, 0, 212)
 runButton.BackgroundColor3 = Color3.fromRGB(0, 180, 95)
 runButton.Text = "Run"
@@ -167,9 +178,26 @@ runButton.Font = Enum.Font.Code
 runButton.Parent = mainFrame
 addUICorner(runButton, 5)
 
+-- MANUAL NEWLINE BUTTON FOR MOBILE USERS
+local enterButton = Instance.new("TextButton")
+enterButton.Size = UDim2.new(0, 80, 0, 28)
+enterButton.Position = UDim2.new(0, 100, 0, 212)
+enterButton.BackgroundColor3 = Color3.fromRGB(60, 110, 200)
+enterButton.Text = "+ Line"
+enterButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+enterButton.TextSize = 13
+enterButton.Font = Enum.Font.Code
+enterButton.Parent = mainFrame
+addUICorner(enterButton, 5)
+
+enterButton.MouseButton1Click:Connect(function()
+	codeInput.Text = codeInput.Text .. "\n"
+	codeInput:CaptureFocus()
+end)
+
 local clearButton = Instance.new("TextButton")
-clearButton.Size = UDim2.new(0, 90, 0, 28)
-clearButton.Position = UDim2.new(0, 110, 0, 212)
+clearButton.Size = UDim2.new(0, 80, 0, 28)
+clearButton.Position = UDim2.new(0, 190, 0, 212)
 clearButton.BackgroundColor3 = Color3.fromRGB(200, 50, 60)
 clearButton.Text = "Clear"
 clearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
