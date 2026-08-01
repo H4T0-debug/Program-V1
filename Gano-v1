@@ -117,25 +117,23 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Code Editor Container (Now a ScrollingFrame for seamless multi-line scrolling)
+-- Code Editor Container
 local codeBoxContainer = Instance.new("ScrollingFrame")
 codeBoxContainer.Size = UDim2.new(1, -20, 0, 160)
 codeBoxContainer.Position = UDim2.new(0, 10, 0, 45)
 codeBoxContainer.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 codeBoxContainer.BorderSizePixel = 0
 codeBoxContainer.ScrollBarThickness = 4
-codeBoxContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-codeBoxContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+codeBoxContainer.CanvasSize = UDim2.new(0, 0, 0, 150)
 codeBoxContainer.Parent = mainFrame
 addUICorner(codeBoxContainer, 6)
 
 local codeInput = Instance.new("TextBox")
-codeInput.Size = UDim2.new(1, -12, 1, -12)
+codeInput.Size = UDim2.new(1, -12, 0, 145)
 codeInput.Position = UDim2.new(0, 6, 0, 6)
-codeInput.AutomaticSize = Enum.AutomaticSize.Y
 codeInput.BackgroundTransparency = 1
 codeInput.Text = ""
-codeInput.PlaceholderText = "// Write your code here...\n// Press Enter for a new line!"
+codeInput.PlaceholderText = "// Write your code here..."
 codeInput.PlaceholderColor3 = Color3.fromRGB(80, 80, 95)
 codeInput.TextColor3 = Color3.fromRGB(230, 230, 240)
 codeInput.TextSize = 13
@@ -146,6 +144,17 @@ codeInput.MultiLine = true
 codeInput.TextWrapped = true
 codeInput.ClearTextOnFocus = false
 codeInput.Parent = codeBoxContainer
+
+-- Mobile Dynamic Resizing Handler
+local function updateCodeBoxBounds()
+	local textHeight = codeInput.TextBounds.Y
+	local newHeight = math.max(145, textHeight + 20)
+	codeInput.Size = UDim2.new(1, -12, 0, newHeight)
+	codeBoxContainer.CanvasSize = UDim2.new(0, 0, 0, newHeight + 10)
+end
+
+codeInput:GetPropertyChangedSignal("TextBounds"):Connect(updateCodeBoxBounds)
+codeInput:GetPropertyChangedSignal("Text"):Connect(updateCodeBoxBounds)
 
 local runButton = Instance.new("TextButton")
 runButton.Size = UDim2.new(0, 90, 0, 28)
