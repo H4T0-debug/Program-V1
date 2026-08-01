@@ -154,18 +154,25 @@ app.post('/execute', async (req, res) => {
             headers: { 'Content-Type': 'application/json' }
         });
 
+        const outputText = response.data.run?.output || '';
+
+        // Catch container execution errors returned with 200 HTTP status
+        if (outputText.includes('OCI runtime error') || outputText.includes('Resource temporarily unavailable')) {
+            throw new Error(`Piston OCI Container Limit Hit: ${outputText.trim()}`);
+        }
+
         return res.json({
             success: true,
             provider: 'Piston-Primary',
             language: response.data.language,
             version: response.data.version,
-            output: response.data.run?.output || 'Code executed with no output.',
+            output: outputText || 'Code executed with no output.',
             code: response.data.run?.code, 
             stderr: response.data.run?.stderr
         });
 
     } catch (primaryError) {
-        const primaryErrMsg = extractRawError(primaryError);
+        const primaryErrMsg = primaryError.message.startsWith('Piston OCI') ? primaryError.message : extractRawError(primaryError);
         debugErrors['1_PistonPrimary'] = primaryErrMsg;
         console.warn('[1/4] Primary Piston API failed:', primaryErrMsg);
 
@@ -176,18 +183,25 @@ app.post('/execute', async (req, res) => {
                 headers: { 'Content-Type': 'application/json' }
             });
 
+            const fallbackOutput = fallbackResponse.data.run?.output || '';
+
+            // Catch container execution errors returned with 200 HTTP status
+            if (fallbackOutput.includes('OCI runtime error') || fallbackOutput.includes('Resource temporarily unavailable')) {
+                throw new Error(`Piston OCI Container Limit Hit: ${fallbackOutput.trim()}`);
+            }
+
             return res.json({
                 success: true,
                 provider: 'Piston-Fallback',
                 language: fallbackResponse.data.language,
                 version: fallbackResponse.data.version,
-                output: fallbackResponse.data.run?.output || 'Code executed with no output.',
+                output: fallbackOutput || 'Code executed with no output.',
                 code: fallbackResponse.data.run?.code,
                 stderr: fallbackResponse.data.run?.stderr
             });
 
         } catch (fallbackError) {
-            const fallbackErrMsg = extractRawError(fallbackError);
+            const fallbackErrMsg = fallbackError.message.startsWith('Piston OCI') ? fallbackError.message : extractRawError(fallbackError);
             debugErrors['2_PistonFallback'] = fallbackErrMsg;
             console.warn('[2/4] Fallback Piston API failed:', fallbackErrMsg);
 
